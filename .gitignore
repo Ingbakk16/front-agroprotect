@@ -33,3 +33,4 @@ pnpm-debug.log*
 # Credentials
 *.pem
 .env
+.vercel
