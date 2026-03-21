@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import { 
   Satellite, 
@@ -18,7 +18,6 @@ import {
   X
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { riskData } from "@/lib/generate-risk-data";
 import { RiskData, ProvinceStats, TipoIndice } from "@/lib/types";
 import { AnalyticsModal } from "@/components/dashboard/analytics-modal";
 
@@ -66,40 +65,109 @@ const features = [
   }
 ];
 
+interface DashboardKpis {
+  activeNodes: number;
+  criticalAlerts: number;
+  nationalRisk: number;
+}
+
+interface DashboardMeta {
+  degraded: boolean;
+  selectionReason: string | null;
+  cropKey: string | null;
+  campaignName: string | null;
+  weatherCoveragePct: number;
+  snapshotExport: string | null;
+}
+
+interface DashboardResponse {
+  source: "gcs" | "mock";
+  manifestGeneratedAt: string | null;
+  kpis: DashboardKpis;
+  riskData: RiskData[];
+  provinceStats: ProvinceStats[];
+  meta: DashboardMeta;
+}
+
+const EMPTY_KPIS: DashboardKpis = {
+  activeNodes: 0,
+  criticalAlerts: 0,
+  nationalRisk: 0,
+};
+
 export default function LandingPage() {
   const [selectedLocation, setSelectedLocation] = useState<RiskData | null>(null);
   const [isAnalyticsOpen, setIsAnalyticsOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<TipoIndice>('global');
+  const [dashboardData, setDashboardData] = useState<DashboardResponse | null>(null);
+  const [isDashboardLoading, setIsDashboardLoading] = useState(true);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
   const dashboardRef = useRef<HTMLDivElement>(null);
 
-  // Calculate KPIs
-  const kpis = useMemo(() => {
-    const criticalAlerts = riskData.filter((c) => c.riesgo > 0.8).length;
-    const nationalRisk = Math.round(
-      (riskData.reduce((a, b) => a + b.riesgo, 0) / riskData.length) * 100
-    );
-    const activeNodes = riskData.length;
-    return { criticalAlerts, nationalRisk, activeNodes };
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadDashboardData() {
+      try {
+        setIsDashboardLoading(true);
+        setDashboardError(null);
+
+        const response = await fetch("/api/data/dashboard", {
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          throw new Error(`Dashboard request failed with status ${response.status}`);
+        }
+
+        const payload = (await response.json()) as DashboardResponse;
+
+        if (!isMounted) {
+          return;
+        }
+
+        setDashboardData(payload);
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        const message = error instanceof Error ? error.message : "Failed to load dashboard data.";
+        setDashboardError(message);
+      } finally {
+        if (isMounted) {
+          setIsDashboardLoading(false);
+        }
+      }
+    }
+
+    void loadDashboardData();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  // Calculate province statistics
-  const provinceStats = useMemo<ProvinceStats[]>(() => {
-    const stats: Record<string, { sum: number; count: number }> = {};
-    riskData.forEach((c) => {
-      if (!stats[c.province_name]) {
-        stats[c.province_name] = { sum: 0, count: 0 };
-      }
-      stats[c.province_name].sum += c.riesgo;
-      stats[c.province_name].count++;
-    });
-    return Object.entries(stats).map(([province, data]) => ({
-      province,
-      averageRisk: Math.round((data.sum / data.count) * 100),
-      count: data.count,
-    }));
-  }, []);
+  const riskData = dashboardData?.riskData ?? [];
+  const kpis = dashboardData?.kpis ?? EMPTY_KPIS;
+  const provinceStats = dashboardData?.provinceStats ?? [];
+
+  useEffect(() => {
+    if (!selectedLocation) {
+      return;
+    }
+
+    const refreshedLocation = riskData.find((location) => location.location_id === selectedLocation.location_id) ?? null;
+
+    if (!refreshedLocation) {
+      setSelectedLocation(null);
+      return;
+    }
+
+    setSelectedLocation(refreshedLocation);
+  }, [riskData, selectedLocation]);
 
   const handleLocationSelect = useCallback((location: RiskData) => {
     setSelectedLocation(location);
@@ -236,15 +304,15 @@ export default function LandingPage() {
             {/* Stats Preview */}
             <div className="grid grid-cols-3 gap-4 sm:gap-8 pt-12 max-w-xl mx-auto">
               <div className="text-center">
-                <div className="text-2xl sm:text-4xl font-black text-primary tabular-nums">{kpis.activeNodes}</div>
+                <div className="text-2xl sm:text-4xl font-black text-primary tabular-nums">{isDashboardLoading ? "--" : kpis.activeNodes}</div>
                 <div className="text-xs sm:text-sm text-muted-foreground mt-1">Active Stations</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl sm:text-4xl font-black text-secondary tabular-nums">{kpis.nationalRisk}%</div>
+                <div className="text-2xl sm:text-4xl font-black text-secondary tabular-nums">{isDashboardLoading ? "--" : `${kpis.nationalRisk}%`}</div>
                 <div className="text-xs sm:text-sm text-muted-foreground mt-1">National Risk</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl sm:text-4xl font-black text-destructive tabular-nums">{kpis.criticalAlerts}</div>
+                <div className="text-2xl sm:text-4xl font-black text-destructive tabular-nums">{isDashboardLoading ? "--" : kpis.criticalAlerts}</div>
                 <div className="text-xs sm:text-sm text-muted-foreground mt-1">Critical Alerts</div>
               </div>
             </div>
@@ -301,6 +369,15 @@ export default function LandingPage() {
               Explore the real-time risk map. Click on any point to get 
               detailed information and consult with our AI assistant.
             </p>
+            {isDashboardLoading ? (
+              <p className="mt-3 text-sm text-muted-foreground">Loading dashboard data...</p>
+            ) : dashboardData?.source === "mock" ? (
+              <p className="mt-3 text-sm text-secondary">
+                Showing fallback demo data while the live export finishes syncing.
+              </p>
+            ) : dashboardError ? (
+              <p className="mt-3 text-sm text-destructive">{dashboardError}</p>
+            ) : null}
           </div>
 
           {/* KPI Cards */}
@@ -311,7 +388,7 @@ export default function LandingPage() {
                   <AlertTriangle className="w-6 h-6 text-destructive" />
                 </div>
                 <div>
-                  <div className="text-3xl font-black text-destructive tabular-nums">{kpis.criticalAlerts}</div>
+                  <div className="text-3xl font-black text-destructive tabular-nums">{isDashboardLoading ? "--" : kpis.criticalAlerts}</div>
                   <div className="text-sm text-muted-foreground">Critical Alerts</div>
                 </div>
               </div>
@@ -322,7 +399,7 @@ export default function LandingPage() {
                   <TrendingUp className="w-6 h-6 text-secondary" />
                 </div>
                 <div>
-                  <div className="text-3xl font-black text-secondary tabular-nums">{kpis.nationalRisk}%</div>
+                  <div className="text-3xl font-black text-secondary tabular-nums">{isDashboardLoading ? "--" : `${kpis.nationalRisk}%`}</div>
                   <div className="text-sm text-muted-foreground">National Risk</div>
                 </div>
               </div>
@@ -333,7 +410,7 @@ export default function LandingPage() {
                   <Activity className="w-6 h-6 text-primary" />
                 </div>
                 <div>
-                  <div className="text-3xl font-black text-primary tabular-nums">{kpis.activeNodes}</div>
+                  <div className="text-3xl font-black text-primary tabular-nums">{isDashboardLoading ? "--" : kpis.activeNodes}</div>
                   <div className="text-sm text-muted-foreground">Active Nodes</div>
                 </div>
               </div>
