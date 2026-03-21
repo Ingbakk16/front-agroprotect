@@ -8,44 +8,13 @@ import { RiskData } from "@/lib/types";
 
 interface AIChatPanelProps {
   selectedLocation: RiskData | null;
-  allData: RiskData[];
+  selectedLocationId: string | null;
   embedded?: boolean;
 }
 
-export function AIChatPanel({ selectedLocation, allData, embedded = false }: AIChatPanelProps) {
+export function AIChatPanel({ selectedLocation, selectedLocationId, embedded = false }: AIChatPanelProps) {
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  // Prepare location data for context
-  const getLocationContext = () => {
-    if (selectedLocation) {
-      return `
-SELECTED LOCATION:
-- City: ${selectedLocation.location_name}
-- Province: ${selectedLocation.province_name}
-- Risk Index: ${Math.round(selectedLocation.riesgo * 100)}%
-- Rain Probability: ${selectedLocation.lluvia}%
-- Water Stress: ${selectedLocation.estres}%
-- Status: ${selectedLocation.riesgo > 0.8 ? "CRITICAL" : selectedLocation.riesgo > 0.5 ? "SURVEILLANCE" : "SAFE"}
-- Coordinates: ${selectedLocation.latitude.toFixed(4)}, ${selectedLocation.longitude.toFixed(4)}
-
-GENERAL SUMMARY:
-- Total monitored nodes: ${allData.length}
-- Critical zones: ${allData.filter(d => d.riesgo > 0.8).length}
-- Under surveillance: ${allData.filter(d => d.riesgo > 0.5 && d.riesgo <= 0.8).length}
-- Safe zones: ${allData.filter(d => d.riesgo <= 0.5).length}
-- National average risk: ${Math.round((allData.reduce((a, b) => a + b.riesgo, 0) / allData.length) * 100)}%
-`;
-    }
-    return `
-No location selected. General data:
-- Total monitored nodes: ${allData.length}
-- Critical zones: ${allData.filter(d => d.riesgo > 0.8).length}
-- Under surveillance: ${allData.filter(d => d.riesgo > 0.5 && d.riesgo <= 0.8).length}
-- Safe zones: ${allData.filter(d => d.riesgo <= 0.5).length}
-- National average risk: ${Math.round((allData.reduce((a, b) => a + b.riesgo, 0) / allData.length) * 100)}%
-`;
-  };
 
   const { messages, sendMessage, status } = useChat({
     transport: new DefaultChatTransport({
@@ -53,7 +22,7 @@ No location selected. General data:
       prepareSendMessagesRequest: ({ messages }) => ({
         body: {
           messages,
-          locationData: getLocationContext(),
+          locationId: selectedLocationId,
         },
       }),
     }),

@@ -89,14 +89,69 @@ interface DashboardResponse {
   meta: DashboardMeta;
 }
 
+interface LocationDetailProvinceContext {
+  yieldKgHa: number | null;
+  harvestedSharePct: number | null;
+  departmentCount: number | null;
+  productionTonnes: number | null;
+  ruralPropertyTaxUsdHaAvg: number | null;
+  ruralPropertyTaxUsdHaSpread: number | null;
+  grossTurnoverTaxPct: number | null;
+  hasWeatherCampaignData: boolean | null;
+  hasTaxData: boolean | null;
+}
+
+interface LocationDetailResponse {
+  source: "gcs" | "mock";
+  manifestGeneratedAt: string | null;
+  detail: {
+    summary: RiskData;
+    snapshotDate: string | null;
+    cropKey: string | null;
+    campaignName: string | null;
+    selectionReason: string | null;
+    provinceContext: LocationDetailProvinceContext;
+  };
+}
+
 const EMPTY_KPIS: DashboardKpis = {
   activeNodes: 0,
   criticalAlerts: 0,
   nationalRisk: 0,
 };
 
+const detailNumberFormatter = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 1,
+});
+
+function formatSnapshotDate(value: string | null) {
+  if (!value) {
+    return "N/A";
+  }
+
+  const timestamp = Date.parse(value);
+
+  if (!Number.isFinite(timestamp)) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+  }).format(new Date(timestamp));
+}
+
+function formatMetric(value: number | null, suffix = "") {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    return "--";
+  }
+
+  return `${detailNumberFormatter.format(value)}${suffix}`;
+}
+
 export default function LandingPage() {
   const [selectedLocation, setSelectedLocation] = useState<RiskData | null>(null);
+  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
+  const [selectedLocationDetail, setSelectedLocationDetail] = useState<LocationDetailResponse["detail"] | null>(null);
   const [isAnalyticsOpen, setIsAnalyticsOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -104,6 +159,8 @@ export default function LandingPage() {
   const [dashboardData, setDashboardData] = useState<DashboardResponse | null>(null);
   const [isDashboardLoading, setIsDashboardLoading] = useState(true);
   const [dashboardError, setDashboardError] = useState<string | null>(null);
+  const [isLocationDetailLoading, setIsLocationDetailLoading] = useState(false);
+  const [locationDetailError, setLocationDetailError] = useState<string | null>(null);
   const dashboardRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -155,22 +212,79 @@ export default function LandingPage() {
   const provinceStats = dashboardData?.provinceStats ?? [];
 
   useEffect(() => {
-    if (!selectedLocation) {
+    if (!selectedLocationId) {
+      setSelectedLocation(null);
+      setSelectedLocationDetail(null);
       return;
     }
 
-    const refreshedLocation = riskData.find((location) => location.location_id === selectedLocation.location_id) ?? null;
+    const refreshedLocation = riskData.find((location) => location.location_id === selectedLocationId) ?? null;
 
     if (!refreshedLocation) {
       setSelectedLocation(null);
+      setSelectedLocationDetail(null);
       return;
     }
 
     setSelectedLocation(refreshedLocation);
-  }, [riskData, selectedLocation]);
+  }, [riskData, selectedLocationId]);
+
+  useEffect(() => {
+    if (!selectedLocationId) {
+      return;
+    }
+
+    const locationId = selectedLocationId;
+    const controller = new AbortController();
+
+    async function loadLocationDetail() {
+      try {
+        setIsLocationDetailLoading(true);
+        setLocationDetailError(null);
+
+        const response = await fetch(`/api/data/locations/${encodeURIComponent(locationId)}`, {
+          signal: controller.signal,
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          throw new Error(`Location detail request failed with status ${response.status}`);
+        }
+
+        const payload = (await response.json()) as LocationDetailResponse;
+
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        setSelectedLocation(payload.detail.summary);
+        setSelectedLocationDetail(payload.detail);
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        const message = error instanceof Error ? error.message : "Failed to load location detail.";
+        setLocationDetailError(message);
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLocationDetailLoading(false);
+        }
+      }
+    }
+
+    void loadLocationDetail();
+
+    return () => {
+      controller.abort();
+    };
+  }, [selectedLocationId]);
 
   const handleLocationSelect = useCallback((location: RiskData) => {
+    setSelectedLocationId(location.location_id);
     setSelectedLocation(location);
+    setSelectedLocationDetail(null);
+    setLocationDetailError(null);
     // Stay on details tab when selecting a location
   }, []);
 
@@ -454,6 +568,24 @@ export default function LandingPage() {
                     <div>
                       <h3 className="text-xl font-bold text-primary">{selectedLocation.location_name}</h3>
                       <p className="text-sm text-muted-foreground">{selectedLocation.province_name}</p>
+                      {isLocationDetailLoading ? (
+                        <p className="mt-2 text-xs text-muted-foreground">Loading live detail...</p>
+                      ) : locationDetailError ? (
+                        <p className="mt-2 text-xs text-destructive">{locationDetailError}</p>
+                      ) : selectedLocationDetail ? (
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                          <div className="rounded-lg border border-border bg-surface-container-high px-3 py-2">
+                            <span className="block text-[10px] uppercase tracking-wide text-muted-foreground/80">Snapshot</span>
+                            <span className="mt-1 block text-foreground">{formatSnapshotDate(selectedLocationDetail.snapshotDate)}</span>
+                          </div>
+                          <div className="rounded-lg border border-border bg-surface-container-high px-3 py-2">
+                            <span className="block text-[10px] uppercase tracking-wide text-muted-foreground/80">Campaign</span>
+                            <span className="mt-1 block text-foreground">
+                              {[selectedLocationDetail.cropKey, selectedLocationDetail.campaignName].filter(Boolean).join(" / ") || "N/A"}
+                            </span>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
 
                     {/* Global Index */}
@@ -498,6 +630,43 @@ export default function LandingPage() {
                         />
                       </div>
                     </div>
+
+                    {selectedLocationDetail ? (
+                      <div className="p-4 rounded-xl bg-surface-container-high border border-border">
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="font-bold text-sm text-emerald-400">4. Province Context</span>
+                          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                            {selectedLocationDetail.selectionReason?.replaceAll("_", " ") ?? "live"}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 text-xs">
+                          <div className="rounded-lg bg-surface-container px-3 py-2 border border-border">
+                            <span className="block text-muted-foreground">Yield</span>
+                            <span className="mt-1 block font-semibold text-foreground">
+                              {formatMetric(selectedLocationDetail.provinceContext.yieldKgHa, " kg/ha")}
+                            </span>
+                          </div>
+                          <div className="rounded-lg bg-surface-container px-3 py-2 border border-border">
+                            <span className="block text-muted-foreground">Harvested Share</span>
+                            <span className="mt-1 block font-semibold text-foreground">
+                              {formatMetric(selectedLocationDetail.provinceContext.harvestedSharePct, "%")}
+                            </span>
+                          </div>
+                          <div className="rounded-lg bg-surface-container px-3 py-2 border border-border">
+                            <span className="block text-muted-foreground">Gross Turnover Tax</span>
+                            <span className="mt-1 block font-semibold text-foreground">
+                              {formatMetric(selectedLocationDetail.provinceContext.grossTurnoverTaxPct, "%")}
+                            </span>
+                          </div>
+                          <div className="rounded-lg bg-surface-container px-3 py-2 border border-border">
+                            <span className="block text-muted-foreground">Rural Tax Avg</span>
+                            <span className="mt-1 block font-semibold text-foreground">
+                              {formatMetric(selectedLocationDetail.provinceContext.ruralPropertyTaxUsdHaAvg, " USD/ha")}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
 
                     {/* Financial Index */}
                     <div className="p-4 rounded-xl bg-surface-container-high border border-border">
@@ -735,8 +904,9 @@ export default function LandingPage() {
             {/* Chat Content */}
             <div className="flex-1 overflow-hidden">
               <AIChatPanel 
+                key={selectedLocationId ?? "general-chat"}
                 selectedLocation={selectedLocation} 
-                allData={riskData}
+                selectedLocationId={selectedLocationId}
                 embedded
               />
             </div>
