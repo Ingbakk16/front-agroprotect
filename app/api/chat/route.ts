@@ -7,6 +7,7 @@ import {
 import { groq } from "@ai-sdk/groq";
 import { google } from "@ai-sdk/google";
 
+import { getNodeRiskLevel } from "@/lib/risk-thresholds";
 import { getDashboardPayload, getLocationDetailPayload } from "@/lib/server/agro-data";
 import { AgroConfigError, AgroNotFoundError } from "@/lib/server/errors";
 
@@ -74,11 +75,11 @@ function getChatModel() {
 }
 
 function getRiskStatusLabel(risk: number) {
-  if (risk > 0.8) {
+  if (getNodeRiskLevel(risk) === "critical") {
     return "CRITICAL";
   }
 
-  if (risk > 0.5) {
+  if (getNodeRiskLevel(risk) === "surveillance") {
     return "SURVEILLANCE";
   }
 

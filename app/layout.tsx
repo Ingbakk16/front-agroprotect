@@ -1,16 +1,24 @@
 import type { Metadata, Viewport } from 'next'
-import { Inter } from 'next/font/google'
-import { Analytics } from '@vercel/analytics/next'
+import { Inter, Playfair_Display } from 'next/font/google'
+import { DeferredAnalytics } from '@/components/deferred-analytics'
 import './globals.css'
 
-const inter = Inter({ 
-  subsets: ["latin"],
-  variable: "--font-inter"
-});
+const inter = Inter({
+  subsets: ['latin'],
+  variable: '--font-inter',
+})
+
+const playfairDisplay = Playfair_Display({
+  subsets: ['latin'],
+  variable: '--font-display',
+  weight: ['400', '600', '700'],
+  style: ['normal', 'italic'],
+})
 
 export const metadata: Metadata = {
   title: 'AgroProtect | Precision Sentinel Dashboard',
-  description: 'Precision agricultural monitoring dashboard for Argentina',
+  description:
+    'Precision agricultural monitoring for Argentina. Earth observation inputs include data from NASA public APIs, combined with risk analytics and AI.',
   generator: 'v0.app',
 }
 
@@ -25,9 +33,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className={`${inter.variable} font-sans antialiased`}>
+      <body
+        className={`${inter.variable} ${playfairDisplay.variable} font-sans antialiased`}
+      >
         {children}
-        <Analytics />
+        <DeferredAnalytics />
       </body>
     </html>
   )
