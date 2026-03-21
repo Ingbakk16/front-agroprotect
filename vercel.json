@@ -3,7 +3,6 @@
   "devCommand": "npm run dev",
   "installCommand": "npm ci",
   "framework": "nextjs",
-  "nodeVersion": "20.x",
   "env": [
     "GOOGLE_GENERATIVE_AI_API_KEY",
     "GCP_PROJECT_ID"
