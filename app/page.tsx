@@ -17,9 +17,10 @@ import {
   Menu,
   X
 } from "lucide-react";
+import { BrandWordmark } from "@/components/brand-wordmark";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { RiskData, ProvinceStats, TipoIndice } from "@/lib/types";
-import { AnalyticsModal } from "@/components/dashboard/analytics-modal";
 
 // Dynamic import for map to avoid SSR issues with Leaflet
 const ArgentinaMap = dynamic(
@@ -40,13 +41,20 @@ const AIChatPanel = dynamic(
   { ssr: false }
 );
 
+const AnalyticsModal = dynamic(
+  () =>
+    import("@/components/dashboard/analytics-modal").then((mod) => mod.AnalyticsModal),
+  { ssr: false, loading: () => null }
+);
+
 
 
 const features = [
   {
     icon: Satellite,
     title: "Satellite Monitoring",
-    description: "Real-time data from 117+ monitoring stations distributed throughout Argentina."
+    description:
+      "Earth observation layers from NASA APIs, fused with 117+ in-country monitoring nodes across Argentina.",
   },
   {
     icon: Shield,
@@ -295,17 +303,20 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
       {/* Navigation */}
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border">
+      <nav className="fixed top-0 left-0 right-0 z-[100] bg-background/80 backdrop-blur-xl border-b border-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                <Satellite className="w-5 h-5 text-primary" />
-              </div>
-              <span className="text-xl font-black tracking-tight">
-                <span className="text-primary">Agro</span>Protect
-              </span>
-            </div>
+            <a
+              href="#"
+              aria-label="AgroProtect — ir al inicio"
+              onClick={(e) => {
+                e.preventDefault();
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+              className="rounded-lg outline-none ring-offset-background transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <BrandWordmark variant="nav" />
+            </a>
 
             {/* Desktop Nav */}
             <div className="hidden md:flex items-center gap-8">
@@ -381,11 +392,17 @@ export default function LandingPage() {
               <span className="text-sm text-primary font-medium">Real-Time Monitoring</span>
             </div>
 
-            {/* Headline */}
-            <h1 className="text-4xl sm:text-5xl lg:text-7xl font-black tracking-tight text-balance">
-              <span className="text-foreground">Precision Sentinel</span>
-              <br />
-              <span className="text-primary">for Argentine Agriculture</span>
+            {/* Headline: sans negrita + serif itálica (par editorial tipo landing moderna) */}
+            <h1 className="text-balance text-4xl sm:text-5xl lg:text-7xl leading-[1.08] sm:leading-[1.06]">
+              <span className="block font-black tracking-tight text-foreground">
+                Precision Sentinel
+              </span>
+              <span className="mt-1 block font-black tracking-tight text-foreground">
+                for Argentine
+              </span>
+              <span className="font-display mt-2 block text-4xl font-normal italic tracking-tight text-primary sm:text-5xl lg:mt-1 lg:text-7xl">
+                Agriculture
+              </span>
             </h1>
 
             {/* Subheadline */}
@@ -418,15 +435,33 @@ export default function LandingPage() {
             {/* Stats Preview */}
             <div className="grid grid-cols-3 gap-4 sm:gap-8 pt-12 max-w-xl mx-auto">
               <div className="text-center">
-                <div className="text-2xl sm:text-4xl font-black text-primary tabular-nums">{isDashboardLoading ? "--" : kpis.activeNodes}</div>
+                <div className="flex justify-center min-h-[2rem] sm:min-h-[2.5rem] items-center">
+                  {isDashboardLoading ? (
+                    <Skeleton className="h-8 sm:h-10 w-14 sm:w-20 rounded-md" />
+                  ) : (
+                    <span className="text-2xl sm:text-4xl font-black text-primary tabular-nums">{kpis.activeNodes}</span>
+                  )}
+                </div>
                 <div className="text-xs sm:text-sm text-muted-foreground mt-1">Active Stations</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl sm:text-4xl font-black text-secondary tabular-nums">{isDashboardLoading ? "--" : `${kpis.nationalRisk}%`}</div>
+                <div className="flex justify-center min-h-[2rem] sm:min-h-[2.5rem] items-center">
+                  {isDashboardLoading ? (
+                    <Skeleton className="h-8 sm:h-10 w-16 sm:w-24 rounded-md" />
+                  ) : (
+                    <span className="text-2xl sm:text-4xl font-black text-secondary tabular-nums">{kpis.nationalRisk}%</span>
+                  )}
+                </div>
                 <div className="text-xs sm:text-sm text-muted-foreground mt-1">National Risk</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl sm:text-4xl font-black text-destructive tabular-nums">{isDashboardLoading ? "--" : kpis.criticalAlerts}</div>
+                <div className="flex justify-center min-h-[2rem] sm:min-h-[2.5rem] items-center">
+                  {isDashboardLoading ? (
+                    <Skeleton className="h-8 sm:h-10 w-12 sm:w-16 rounded-md" />
+                  ) : (
+                    <span className="text-2xl sm:text-4xl font-black text-destructive tabular-nums">{kpis.criticalAlerts}</span>
+                  )}
+                </div>
                 <div className="text-xs sm:text-sm text-muted-foreground mt-1">Critical Alerts</div>
               </div>
             </div>
@@ -450,8 +485,8 @@ export default function LandingPage() {
               <span className="text-primary">Cutting-Edge</span> Technology
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto">
-              We combine satellite data, IoT sensors, and AI algorithms to provide you 
-              with the most accurate information in the agricultural sector.
+              We combine NASA Earth observation APIs, ground and IoT signals, and AI to surface
+              actionable risk insight for the agricultural sector.
             </p>
           </div>
 
@@ -483,8 +518,22 @@ export default function LandingPage() {
               Explore the real-time risk map. Click on any point to get 
               detailed information and consult with our AI assistant.
             </p>
+            <p className="mt-2 max-w-2xl mx-auto text-xs text-muted-foreground/85">
+              Satellite and environmental context is informed by{" "}
+              <a
+                href="https://api.nasa.gov"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary underline-offset-2 hover:underline"
+              >
+                NASA&apos;s public Earth science APIs
+              </a>
+              , alongside AgroProtect analytics.
+            </p>
             {isDashboardLoading ? (
-              <p className="mt-3 text-sm text-muted-foreground">Loading dashboard data...</p>
+              <div className="mt-3 flex justify-center">
+                <Skeleton className="h-4 w-52 max-w-full rounded-md" />
+              </div>
             ) : dashboardData?.source === "mock" ? (
               <p className="mt-3 text-sm text-secondary">
                 Showing fallback demo data while the live export finishes syncing.
@@ -502,7 +551,13 @@ export default function LandingPage() {
                   <AlertTriangle className="w-6 h-6 text-destructive" />
                 </div>
                 <div>
-                  <div className="text-3xl font-black text-destructive tabular-nums">{isDashboardLoading ? "--" : kpis.criticalAlerts}</div>
+                  <div className="min-h-9 flex items-center">
+                    {isDashboardLoading ? (
+                      <Skeleton className="h-9 w-12 rounded-md" />
+                    ) : (
+                      <span className="text-3xl font-black text-destructive tabular-nums">{kpis.criticalAlerts}</span>
+                    )}
+                  </div>
                   <div className="text-sm text-muted-foreground">Critical Alerts</div>
                 </div>
               </div>
@@ -513,7 +568,13 @@ export default function LandingPage() {
                   <TrendingUp className="w-6 h-6 text-secondary" />
                 </div>
                 <div>
-                  <div className="text-3xl font-black text-secondary tabular-nums">{isDashboardLoading ? "--" : `${kpis.nationalRisk}%`}</div>
+                  <div className="min-h-9 flex items-center">
+                    {isDashboardLoading ? (
+                      <Skeleton className="h-9 w-16 rounded-md" />
+                    ) : (
+                      <span className="text-3xl font-black text-secondary tabular-nums">{kpis.nationalRisk}%</span>
+                    )}
+                  </div>
                   <div className="text-sm text-muted-foreground">National Risk</div>
                 </div>
               </div>
@@ -524,7 +585,13 @@ export default function LandingPage() {
                   <Activity className="w-6 h-6 text-primary" />
                 </div>
                 <div>
-                  <div className="text-3xl font-black text-primary tabular-nums">{isDashboardLoading ? "--" : kpis.activeNodes}</div>
+                  <div className="min-h-9 flex items-center">
+                    {isDashboardLoading ? (
+                      <Skeleton className="h-9 w-14 rounded-md" />
+                    ) : (
+                      <span className="text-3xl font-black text-primary tabular-nums">{kpis.activeNodes}</span>
+                    )}
+                  </div>
                   <div className="text-sm text-muted-foreground">Active Nodes</div>
                 </div>
               </div>
@@ -534,7 +601,7 @@ export default function LandingPage() {
           {/* Map and Detail Panel */}
           <div className="grid lg:grid-cols-3 gap-6">
             {/* Map */}
-            <div className="lg:col-span-2 h-[500px] lg:h-[600px] rounded-2xl overflow-hidden border border-border bg-surface-container-lowest">
+            <div className="relative isolate z-0 lg:col-span-2 h-[500px] lg:h-[600px] rounded-2xl overflow-hidden border border-border bg-surface-container-lowest">
               <ArgentinaMap 
                 data={riskData} 
                 onLocationSelect={handleLocationSelect}
@@ -823,8 +890,10 @@ export default function LandingPage() {
       {/* CTA Section */}
       <section className="py-24 bg-surface-container-low">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-3xl sm:text-4xl font-black mb-4">
-            Protect Your <span className="text-primary">Crops</span> Today
+          <h2 className="text-balance text-3xl sm:text-4xl font-black leading-tight mb-4">
+            Protect Your{' '}
+            <span className="font-display font-normal italic text-primary">Crops</span>
+            {' '}Today
           </h2>
           <p className="text-muted-foreground mb-8 max-w-2xl mx-auto">
             Join the producers who already trust AgroProtect to protect their investments 
@@ -854,27 +923,34 @@ export default function LandingPage() {
       <footer className="py-12 bg-surface-container border-t border-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Satellite className="w-4 h-4 text-primary" />
-              </div>
-              <span className="font-bold">
-                <span className="text-primary">Agro</span>Protect
-              </span>
+            <BrandWordmark variant="footer" />
+            <div className="text-center md:text-right text-sm text-muted-foreground space-y-1">
+              <p>Precision Sentinel Dashboard — Argentina</p>
+              <p className="text-xs text-muted-foreground/90">
+                Earth observation inputs via{" "}
+                <a
+                  href="https://api.nasa.gov"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary underline-offset-2 hover:underline"
+                >
+                  NASA APIs
+                </a>
+                .
+              </p>
             </div>
-            <p className="text-sm text-muted-foreground">
-              Precision Sentinel Dashboard - Argentina
-            </p>
           </div>
         </div>
       </footer>
 
-      {/* Analytics Modal */}
-      <AnalyticsModal
-        isOpen={isAnalyticsOpen}
-        onClose={() => setIsAnalyticsOpen(false)}
-        provinceStats={provinceStats}
-      />
+      {/* Analytics Modal — chunk loads only when opened */}
+      {isAnalyticsOpen ? (
+        <AnalyticsModal
+          isOpen
+          onClose={() => setIsAnalyticsOpen(false)}
+          provinceStats={provinceStats}
+        />
+      ) : null}
 
       {/* AI Chat Modal - Powered by Gemini + MCP */}
       {isChatOpen && (
@@ -887,8 +963,11 @@ export default function LandingPage() {
                   <Bot className="w-5 h-5 text-primary" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-foreground">AgroProtect AI</h3>
-                  <p className="text-xs text-muted-foreground">
+                  <h3 className="text-foreground leading-tight">
+                    <span className="font-bold">AgroProtect</span>
+                    <span className="font-display font-normal italic text-primary"> AI</span>
+                  </h3>
+                  <p className="mt-0.5 text-xs font-display italic text-muted-foreground">
                     Powered by Google Gemini + BigQuery
                   </p>
                 </div>

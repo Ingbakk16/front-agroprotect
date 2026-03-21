@@ -8,6 +8,7 @@ import type {
   ProvinceStats,
   RiskData,
 } from "@/lib/types";
+import { NODE_CRITICAL_RISK_THRESHOLD } from "@/lib/risk-thresholds";
 import {
   type DimLocationRow,
   dimLocationRowSchema,
@@ -324,7 +325,7 @@ function buildProvinceStats(riskData: RiskData[]): ProvinceStats[] {
 
 function buildDashboardKpis(riskData: RiskData[]): DashboardKpis {
   const activeNodes = riskData.length;
-  const criticalAlerts = riskData.filter((location) => location.riesgo > 0.8).length;
+  const criticalAlerts = riskData.filter((location) => location.riesgo > NODE_CRITICAL_RISK_THRESHOLD).length;
   const nationalRisk = activeNodes === 0 ? 0 : Math.round(average(riskData.map((location) => location.riesgo)) * 100);
 
   return {

@@ -121,6 +121,13 @@
   }
 }
 
+/* Hero / display: Playfair via next/font --font-display on <body> */
+@layer utilities {
+  .font-display {
+    font-family: var(--font-display), ui-serif, Georgia, 'Times New Roman', serif;
+  }
+}
+
 /* AgroProtect custom styles */
 .glass-panel {
   background: rgba(38, 42, 52, 0.6);
@@ -136,6 +143,9 @@
 .leaflet-container {
   background: #0a0e17 !important;
   border-radius: 1rem;
+  /* Keep tile/overlay stacking inside the map; avoids glitches with fixed UI while scrolling */
+  isolation: isolate;
+  z-index: 0;
 }
 
 .custom-div-icon {

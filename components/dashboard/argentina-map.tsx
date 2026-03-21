@@ -4,6 +4,7 @@ import { useEffect, useRef, useMemo, useState, useCallback } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { RiskData, TipoIndice } from "@/lib/types";
+import { getNodeRiskLevel } from "@/lib/risk-thresholds";
 import { DollarSign, Factory, Cloud, Layers, Loader2 } from "lucide-react";
 
 // Extend Leaflet types for heat layer
@@ -45,52 +46,65 @@ function getRiskValue(location: RiskData, index: TipoIndice): number {
 }
 
 function getMarkerColor(risk: number): string {
-  if (risk > 0.7) return "#c50100";
-  if (risk > 0.4) return "#fd9000";
+  const riskLevel = getNodeRiskLevel(risk);
+
+  if (riskLevel === "critical") return "#c50100";
+  if (riskLevel === "surveillance") return "#fd9000";
   return "#39ff14";
 }
 
 function getMarkerSize(zoom: number): number {
-  if (zoom <= 3) return 4;   // Very zoomed out - tiny dots
-  if (zoom <= 4) return 6;   // Zoomed out - small dots
-  if (zoom <= 5) return 10;  // Medium zoom
-  if (zoom <= 6) return 14;  
+  if (zoom <= 3) return 5;
+  if (zoom <= 4) return 7;
+  if (zoom <= 5) return 10;
+  if (zoom <= 6) return 14;
   if (zoom <= 7) return 18;
   if (zoom <= 8) return 22;
-  return 26;                 // Zoomed in - full size
+  return 26;
 }
 
 function getMarkerOpacity(zoom: number): { outer: number; inner: number } {
-  if (zoom <= 3) return { outer: 0.05, inner: 0.5 };   // Almost invisible halo
-  if (zoom <= 4) return { outer: 0.08, inner: 0.6 };
+  if (zoom <= 3) return { outer: 0.08, inner: 0.58 };
+  if (zoom <= 4) return { outer: 0.1, inner: 0.64 };
   if (zoom <= 5) return { outer: 0.12, inner: 0.7 };
-  if (zoom <= 6) return { outer: 0.15, inner: 0.8 };
-  return { outer: 0.15, inner: 0.85 };
+  if (zoom <= 6) return { outer: 0.14, inner: 0.78 };
+  return { outer: 0.15, inner: 0.84 };
 }
 
 export function ArgentinaMap({ data, onLocationSelect, selectedIndex, onIndexChange }: ArgentinaMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const heatLayerRef = useRef<L.Layer | null>(null);
+  /** Ref para siempre poder hacer map.off del último zoomend del heat (evita fugas si el cleanup corre antes del rAF) */
+  const heatZoomHandlerRef = useRef<(() => void) | null>(null);
   const markersRef = useRef<L.Marker[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [canAddHeat, setCanAddHeat] = useState(false);
 
   const getGradient = useCallback((index: TipoIndice) => {
     switch (index) {
-      case 'financiero': return { 0.4: "#22c55e", 0.6: "#3b82f6", 1.0: "#c50100" };
-      case 'produccion': return { 0.4: "#22c55e", 0.6: "#f59e0b", 1.0: "#c50100" };
-      case 'climatico': return { 0.4: "#22c55e", 0.6: "#06b6d4", 1.0: "#c50100" };
-      default: return { 0.4: "#39ff14", 0.6: "#fd9000", 1.0: "#c50100" };
+      case "financiero":
+        return { 0.4: "#22c55e", 0.6: "#3b82f6", 1: "#c50100" };
+      case "produccion":
+        return { 0.4: "#22c55e", 0.6: "#f59e0b", 1: "#c50100" };
+      case "climatico":
+        return { 0.4: "#22c55e", 0.6: "#06b6d4", 1: "#c50100" };
+      default:
+        return { 0.4: "#39ff14", 0.6: "#fd9000", 1: "#c50100" };
     }
+  }, []);
+
+  const heatIntensity = useCallback((risk: number) => {
+    const boosted = risk * 1.08 + 0.05;
+    return Math.min(1, Math.max(0.08, boosted));
   }, []);
 
   const heatPoints = useMemo(() => {
     return data.map((c) => {
       const risk = getRiskValue(c, selectedIndex);
-      return [c.latitude, c.longitude, risk] as [number, number, number];
+      return [c.latitude, c.longitude, heatIntensity(risk)] as [number, number, number];
     });
-  }, [data, selectedIndex]);
+  }, [data, selectedIndex, heatIntensity]);
 
   // Initialize map
   useEffect(() => {
@@ -151,7 +165,13 @@ export function ArgentinaMap({ data, onLocationSelect, selectedIndex, onIndexCha
       mounted = false;
       clearTimeout(initTimeout);
       if (mapRef.current) {
-        mapRef.current.remove();
+        const m = mapRef.current;
+        const hz = heatZoomHandlerRef.current;
+        if (hz) {
+          m.off("zoomend", hz);
+          heatZoomHandlerRef.current = null;
+        }
+        m.remove();
         mapRef.current = null;
       }
     };
@@ -166,6 +186,14 @@ export function ArgentinaMap({ data, onLocationSelect, selectedIndex, onIndexCha
     let mounted = true;
     let retryCount = 0;
     const maxRetries = 5;
+
+    const detachHeatZoom = () => {
+      const hz = heatZoomHandlerRef.current;
+      if (hz) {
+        map.off("zoomend", hz);
+        heatZoomHandlerRef.current = null;
+      }
+    };
 
     const addHeatLayer = async () => {
       if (!mounted || retryCount >= maxRetries) return;
@@ -195,8 +223,9 @@ export function ArgentinaMap({ data, onLocationSelect, selectedIndex, onIndexCha
         return;
       }
 
-      // Remove existing heat layer
+      // Remove existing heat layer (y quitar zoom antes de recrear)
       if (heatLayerRef.current) {
+        detachHeatZoom();
         try {
           map.removeLayer(heatLayerRef.current);
         } catch {
@@ -221,23 +250,59 @@ export function ArgentinaMap({ data, onLocationSelect, selectedIndex, onIndexCha
       // Use requestAnimationFrame to ensure DOM is painted
       requestAnimationFrame(() => {
         if (!mounted || !mapRef.current) return;
-        
+
         // One more size check
         const checkSize = mapRef.current.getSize();
         if (checkSize.x < 300 || checkSize.y < 300) return;
 
+        const mapInstance = mapRef.current;
+        const zoom = mapInstance.getZoom();
+
+        const heatOptionsForZoom = (z: number) => {
+          const radius = Math.round(72 - z * 5);
+          const blur = Math.round(34 - z * 2);
+          return {
+            radius: Math.min(64, Math.max(30, radius)),
+            blur: Math.min(32, Math.max(18, blur)),
+          };
+        };
+
         try {
+          const { radius, blur } = heatOptionsForZoom(zoom);
           const heatLayer = L.heatLayer(heatPoints, {
-            radius: 40,
-            blur: 25,
-            maxOpacity: 0.85,
-            minOpacity: 0.3,
+            radius,
+            blur,
+            max: 1,
+            maxOpacity: 0.78,
+            minOpacity: 0.28,
             gradient: getGradient(selectedIndex),
-            maxZoom: 12,
+            maxZoom: 14,
           });
-          
-          heatLayer.addTo(mapRef.current);
+
+          heatLayer.addTo(mapInstance);
           heatLayerRef.current = heatLayer;
+          if (typeof heatLayer.bringToBack === "function") {
+            heatLayer.bringToBack();
+          }
+
+          const syncHeatToZoom = () => {
+            const layer = heatLayerRef.current as L.Layer & {
+              setOptions?: (o: Record<string, unknown>) => void;
+            };
+            if (!layer?.setOptions || !mapRef.current) return;
+            const z = mapRef.current.getZoom();
+            layer.setOptions({
+              ...heatOptionsForZoom(z),
+              gradient: getGradient(selectedIndex),
+              maxOpacity: 0.78,
+              minOpacity: 0.28,
+              maxZoom: 14,
+            });
+          };
+
+          detachHeatZoom();
+          heatZoomHandlerRef.current = syncHeatToZoom;
+          mapInstance.on("zoomend", syncHeatToZoom);
         } catch {
           // Silently fail - heatmap not critical
         }
@@ -250,6 +315,7 @@ export function ArgentinaMap({ data, onLocationSelect, selectedIndex, onIndexCha
     return () => {
       mounted = false;
       clearTimeout(timeoutId);
+      detachHeatZoom();
     };
   }, [canAddHeat, heatPoints, selectedIndex, getGradient]);
 
@@ -394,10 +460,50 @@ export function ArgentinaMap({ data, onLocationSelect, selectedIndex, onIndexCha
     return () => observer.disconnect();
   }, [canAddHeat]);
 
+  // Leaflet misaligns tiles/overlays when the page scrolls unless size is recomputed.
+  useEffect(() => {
+    const map = mapRef.current;
+    const container = mapContainerRef.current;
+    if (!map || !container || !canAddHeat) return;
+
+    let rafId = 0;
+    const scheduleInvalidate = () => {
+      if (rafId) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        const rect = container.getBoundingClientRect();
+        if (rect.width < 2 || rect.height < 2) return;
+        map.invalidateSize({ animate: false });
+      });
+    };
+
+    window.addEventListener("scroll", scheduleInvalidate, { passive: true });
+    window.addEventListener("resize", scheduleInvalidate);
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            scheduleInvalidate();
+          }
+        }
+      },
+      { threshold: [0, 0.1, 0.5, 1] }
+    );
+    io.observe(container);
+
+    return () => {
+      window.removeEventListener("scroll", scheduleInvalidate);
+      window.removeEventListener("resize", scheduleInvalidate);
+      io.disconnect();
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, [canAddHeat]);
+
   const currentOption = indexOptions.find(opt => opt.value === selectedIndex) || indexOptions[0];
 
   return (
-    <div className="w-full h-full relative rounded-2xl overflow-hidden border border-border bg-surface-container-lowest">
+    <div className="isolate z-0 w-full h-full relative rounded-2xl overflow-hidden border border-border bg-surface-container-lowest">
       {isLoading && (
         <div className="absolute inset-0 z-[1001] bg-surface-container flex items-center justify-center">
           <div className="flex flex-col items-center gap-3">
@@ -407,8 +513,8 @@ export function ArgentinaMap({ data, onLocationSelect, selectedIndex, onIndexCha
         </div>
       )}
 
-      <div ref={mapContainerRef} className="h-full w-full" />
-      
+      <div ref={mapContainerRef} className="relative z-0 h-full w-full" />
+
       <div className="absolute top-4 left-4 z-[1000]">
         <div className="bg-surface-container/90 backdrop-blur-md rounded-xl border border-border p-1 flex flex-col gap-1">
           {indexOptions.map((option) => (
@@ -434,6 +540,12 @@ export function ArgentinaMap({ data, onLocationSelect, selectedIndex, onIndexCha
             <span style={{ color: currentOption.color }}>{currentOption.icon}</span>
             <span className="text-xs font-bold text-foreground">{currentOption.label} Index</span>
           </div>
+          <p className="mb-2 text-[10px] leading-snug text-muted-foreground/90">
+            Heat map by index; click a node for detail.
+          </p>
+          <p className="mb-3 text-[10px] leading-snug text-muted-foreground/75">
+            Context layers include NASA Earth observation API data.
+          </p>
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full bg-[#39ff14]" />
