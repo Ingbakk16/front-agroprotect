@@ -35,11 +35,13 @@ const ArgentinaMap = dynamic(
   }
 );
 
-// Dynamic import for AI Chat
+// Dynamic import for AI Chat with Gemini
 const AIChatPanel = dynamic(
   () => import("@/components/dashboard/ai-chat-panel").then((mod) => mod.AIChatPanel),
   { ssr: false }
 );
+
+
 
 const features = [
   {
@@ -60,7 +62,7 @@ const features = [
   {
     icon: Bot,
     title: "AI Assistant",
-    description: "Consult with our intelligent assistant to get personalized recommendations."
+    description: "Consult our Gemini-powered assistant with BigQuery integration for deep analysis."
   }
 ];
 
@@ -628,7 +630,7 @@ export default function LandingPage() {
         provinceStats={provinceStats}
       />
 
-      {/* AI Chat Modal */}
+      {/* AI Chat Modal - Powered by Gemini + MCP */}
       {isChatOpen && (
         <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-surface-container border border-border w-full max-w-lg h-[600px] rounded-2xl overflow-hidden flex flex-col shadow-2xl">
@@ -641,9 +643,7 @@ export default function LandingPage() {
                 <div>
                   <h3 className="font-bold text-foreground">AgroProtect AI</h3>
                   <p className="text-xs text-muted-foreground">
-                    {selectedLocation 
-                      ? `Analyzing: ${selectedLocation.location_name}` 
-                      : 'Agricultural analysis assistant'}
+                    Powered by Google Gemini + BigQuery
                   </p>
                 </div>
               </div>
@@ -666,6 +666,7 @@ export default function LandingPage() {
           </div>
         </div>
       )}
+
     </div>
   );
 }
