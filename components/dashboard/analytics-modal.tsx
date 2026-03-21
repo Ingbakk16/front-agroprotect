@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { X, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { ProvinceStats } from "@/lib/types";
 import {
@@ -18,6 +19,17 @@ interface AnalyticsModalProps {
   isOpen: boolean;
   onClose: () => void;
   provinceStats: ProvinceStats[];
+}
+
+interface ProvinceAnalyticsResponse {
+  source: "gcs" | "mock";
+  manifestGeneratedAt: string | null;
+  provinceStats: ProvinceStats[];
+  meta: {
+    cropKey: string | null;
+    campaignName: string | null;
+    selectionReason: string | null;
+  };
 }
 
 const getRiskColor = (risk: number) => {
@@ -55,16 +67,66 @@ export function AnalyticsModal({
   onClose,
   provinceStats,
 }: AnalyticsModalProps) {
+  const [analyticsData, setAnalyticsData] = useState<ProvinceAnalyticsResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function loadProvinceAnalytics() {
+      try {
+        setIsLoading(true);
+        setError(null);
+
+        const response = await fetch("/api/data/provinces", {
+          signal: controller.signal,
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          throw new Error(`Province analytics request failed with status ${response.status}`);
+        }
+
+        const payload = (await response.json()) as ProvinceAnalyticsResponse;
+        setAnalyticsData(payload);
+      } catch (fetchError) {
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        const message = fetchError instanceof Error ? fetchError.message : "Failed to load province analytics.";
+        setError(message);
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadProvinceAnalytics();
+
+    return () => {
+      controller.abort();
+    };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
-  const sortedStats = [...provinceStats].sort((a, b) => b.averageRisk - a.averageRisk);
-  const avgNational = Math.round(
-    provinceStats.reduce((sum, p) => sum + p.averageRisk, 0) / provinceStats.length
-  );
+  const activeProvinceStats = analyticsData?.provinceStats ?? provinceStats;
+  const sortedStats = [...activeProvinceStats].sort((a, b) => b.averageRisk - a.averageRisk);
+  const avgNational = sortedStats.length === 0
+    ? 0
+    : Math.round(sortedStats.reduce((sum, province) => sum + province.averageRisk, 0) / sortedStats.length);
 
   const criticalCount = sortedStats.filter(p => p.averageRisk > 70).length;
   const vigilanceCount = sortedStats.filter(p => p.averageRisk > 40 && p.averageRisk <= 70).length;
   const safeCount = sortedStats.filter(p => p.averageRisk <= 40).length;
+  const subtitleParts = [analyticsData?.meta.cropKey, analyticsData?.meta.campaignName].filter(Boolean);
 
   return (
     <div 
@@ -84,7 +146,15 @@ export function AnalyticsModal({
         </h2>
         <p className="text-muted-foreground text-sm mb-6">
           Comparative analysis of risk indices in all monitored provinces
+          {subtitleParts.length > 0 ? ` - ${subtitleParts.join(" / ")}` : ""}
         </p>
+        {isLoading ? (
+          <p className="text-xs text-muted-foreground mb-4">Refreshing province analytics...</p>
+        ) : analyticsData?.source === "mock" ? (
+          <p className="text-xs text-secondary mb-4">Showing fallback demo analytics while live province data is unavailable.</p>
+        ) : error ? (
+          <p className="text-xs text-destructive mb-4">{error}</p>
+        ) : null}
 
         {/* Summary Cards */}
         <div className="grid grid-cols-3 gap-4 mb-6">
@@ -117,37 +187,43 @@ export function AnalyticsModal({
         {/* Chart */}
         <div className="bg-surface-container rounded-xl p-4 border border-border mb-6">
           <h3 className="text-sm font-bold text-foreground mb-4">Risk Index by Province</h3>
-          <div className="h-[280px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={sortedStats}
-                layout="vertical"
-                margin={{ top: 5, right: 30, left: 100, bottom: 5 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} />
-                <XAxis 
-                  type="number" 
-                  domain={[0, 100]} 
-                  tick={{ fill: '#85967c', fontSize: 10 }}
-                  axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
-                />
-                <YAxis 
-                  dataKey="province" 
-                  type="category" 
-                  tick={{ fill: '#dfe2ef', fontSize: 11 }}
-                  axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
-                  width={95}
-                />
-                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
-                <ReferenceLine x={avgNational} stroke="#85967c" strokeDasharray="5 5" label={{ value: `Average: ${avgNational}%`, position: 'top', fill: '#85967c', fontSize: 10 }} />
-                <Bar dataKey="averageRisk" radius={[0, 4, 4, 0]} barSize={16}>
-                  {sortedStats.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={getRiskColor(entry.averageRisk)} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          {sortedStats.length === 0 ? (
+            <div className="h-[280px] flex items-center justify-center text-sm text-muted-foreground">
+              No province analytics available.
+            </div>
+          ) : (
+            <div className="h-[280px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={sortedStats}
+                  layout="vertical"
+                  margin={{ top: 5, right: 30, left: 100, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} />
+                  <XAxis 
+                    type="number" 
+                    domain={[0, 100]} 
+                    tick={{ fill: '#85967c', fontSize: 10 }}
+                    axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
+                  />
+                  <YAxis 
+                    dataKey="province" 
+                    type="category" 
+                    tick={{ fill: '#dfe2ef', fontSize: 11 }}
+                    axisLine={{ stroke: 'rgba(255,255,255,0.1)' }}
+                    width={95}
+                  />
+                  <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.03)' }} />
+                  <ReferenceLine x={avgNational} stroke="#85967c" strokeDasharray="5 5" label={{ value: `Average: ${avgNational}%`, position: 'top', fill: '#85967c', fontSize: 10 }} />
+                  <Bar dataKey="averageRisk" radius={[0, 4, 4, 0]} barSize={16}>
+                    {sortedStats.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={getRiskColor(entry.averageRisk)} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
 
         {/* Data Table */}

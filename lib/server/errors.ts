@@ -45,3 +45,9 @@ export class AgroNdjsonError extends AgroServerError {
     super(message, 500, options);
   }
 }
+
+export class AgroNotFoundError extends AgroServerError {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, 404, options);
+  }
+}

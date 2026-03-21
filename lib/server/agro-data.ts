@@ -21,7 +21,7 @@ import {
   type YieldProvinceCampaignRow,
 } from "@/lib/server/dashboard-schemas";
 import { getAgroEnv } from "@/lib/server/env";
-import { AgroDataError } from "@/lib/server/errors";
+import { AgroDataError, AgroNotFoundError } from "@/lib/server/errors";
 import {
   listResolvedExportsFromManifest,
   resolvePreferredSnapshotExportFromManifest,
@@ -53,6 +53,42 @@ export interface DashboardPayload {
   riskData: RiskData[];
   provinceStats: ProvinceStats[];
   meta: DashboardPayloadMeta;
+}
+
+export interface ProvinceAnalyticsPayload {
+  source: "gcs" | "mock";
+  manifestGeneratedAt: string | null;
+  provinceStats: ProvinceStats[];
+  meta: {
+    cropKey: string | null;
+    campaignName: string | null;
+    selectionReason: string | null;
+  };
+}
+
+export interface LocationDetailProvinceContext {
+  yieldKgHa: number | null;
+  harvestedSharePct: number | null;
+  departmentCount: number | null;
+  productionTonnes: number | null;
+  ruralPropertyTaxUsdHaAvg: number | null;
+  ruralPropertyTaxUsdHaSpread: number | null;
+  grossTurnoverTaxPct: number | null;
+  hasWeatherCampaignData: boolean | null;
+  hasTaxData: boolean | null;
+}
+
+export interface LocationDetailPayload {
+  source: "gcs" | "mock";
+  manifestGeneratedAt: string | null;
+  detail: {
+    summary: RiskData;
+    snapshotDate: string | null;
+    cropKey: string | null;
+    campaignName: string | null;
+    selectionReason: string | null;
+    provinceContext: LocationDetailProvinceContext;
+  };
 }
 
 interface ResolvedExportsByLogicalName {
@@ -99,6 +135,20 @@ interface CachedDashboardPayloadContext {
   payload: DashboardPayload;
 }
 
+interface CachedProvinceAnalyticsPayloadContext {
+  cacheKey: string;
+  payload: ProvinceAnalyticsPayload;
+}
+
+interface CachedLocationDetailSupportContext {
+  cacheKey: string;
+  selection: CampaignSelection;
+  snapshotByLocationId: Map<string, LocationSnapshotRow>;
+  taxByProvince: Map<string, TaxProvinceRow>;
+  yieldByProvince: Map<string, YieldProvinceCampaignRow>;
+  martByProvince: Map<string, MartAgroProvinceCampaignRow>;
+}
+
 const DEFAULT_CROP_KEY = "SOJA";
 const GLOBAL_INDEX_WEIGHTS = {
   climatic: 0.4,
@@ -110,7 +160,10 @@ const sequenceCollator = new Intl.Collator(undefined, { numeric: true, sensitivi
 
 let cachedDataSourcesContext: CachedDataSourcesContext | null = null;
 let cachedDashboardPayloadContext: CachedDashboardPayloadContext | null = null;
+let cachedProvinceAnalyticsPayloadContext: CachedProvinceAnalyticsPayloadContext | null = null;
+let cachedLocationDetailSupportContext: CachedLocationDetailSupportContext | null = null;
 let cachedMockDashboardPayload: DashboardPayload | null = null;
+let cachedMockProvinceAnalyticsPayload: ProvinceAnalyticsPayload | null = null;
 
 function clamp(value: number, min = 0, max = 100) {
   return Math.min(max, Math.max(min, value));
@@ -316,6 +369,70 @@ function buildMockDashboardPayload(options?: { degraded?: boolean; selectionReas
   };
 }
 
+function getBaseMockProvinceAnalyticsPayload() {
+  if (!cachedMockProvinceAnalyticsPayload) {
+    cachedMockProvinceAnalyticsPayload = {
+      source: "mock",
+      manifestGeneratedAt: null,
+      provinceStats: buildProvinceStats(mockRiskData),
+      meta: {
+        cropKey: null,
+        campaignName: null,
+        selectionReason: null,
+      },
+    };
+  }
+
+  return cachedMockProvinceAnalyticsPayload;
+}
+
+function buildMockProvinceAnalyticsPayload(options?: { selectionReason?: string | null }): ProvinceAnalyticsPayload {
+  const basePayload = getBaseMockProvinceAnalyticsPayload();
+
+  return {
+    ...basePayload,
+    meta: {
+      ...basePayload.meta,
+      selectionReason: options?.selectionReason ?? basePayload.meta.selectionReason,
+    },
+  };
+}
+
+function buildEmptyProvinceContext(): LocationDetailProvinceContext {
+  return {
+    yieldKgHa: null,
+    harvestedSharePct: null,
+    departmentCount: null,
+    productionTonnes: null,
+    ruralPropertyTaxUsdHaAvg: null,
+    ruralPropertyTaxUsdHaSpread: null,
+    grossTurnoverTaxPct: null,
+    hasWeatherCampaignData: null,
+    hasTaxData: null,
+  };
+}
+
+function buildMockLocationDetailPayload(locationId: string, options?: { selectionReason?: string | null }): LocationDetailPayload {
+  const location = mockRiskData.find((entry) => entry.location_id === locationId);
+
+  if (!location) {
+    throw new AgroNotFoundError(`Location \"${locationId}\" was not found in the fallback dataset.`);
+  }
+
+  return {
+    source: "mock",
+    manifestGeneratedAt: null,
+    detail: {
+      summary: location,
+      snapshotDate: null,
+      cropKey: null,
+      campaignName: null,
+      selectionReason: options?.selectionReason ?? null,
+      provinceContext: buildEmptyProvinceContext(),
+    },
+  };
+}
+
 async function getDataSourcesContext(): Promise<CachedDataSourcesContext> {
   const { manifest } = await readParsedExportManifest();
 
@@ -467,6 +584,43 @@ function buildYieldByProvinceMap(yieldRows: YieldProvinceCampaignRow[], selectio
   return selectedRowsByProvince;
 }
 
+function buildMartByProvinceMap(martRows: MartAgroProvinceCampaignRow[], selection: CampaignSelection) {
+  const rowsByProvince = new Map<string, MartAgroProvinceCampaignRow[]>();
+
+  for (const row of martRows) {
+    const provinceJoinKey = getProvinceJoinKey(row.province_key, row.province_name);
+    const currentRows = rowsByProvince.get(provinceJoinKey) ?? [];
+    currentRows.push(row);
+    rowsByProvince.set(provinceJoinKey, currentRows);
+  }
+
+  const selectedRowsByProvince = new Map<string, MartAgroProvinceCampaignRow>();
+
+  for (const [provinceJoinKey, provinceRows] of rowsByProvince.entries()) {
+    const exactMatchRows = provinceRows.filter(
+      (row) => row.crop_key === selection.cropKey && row.campaign_name === selection.campaignName,
+    );
+    const cropMatchRows = provinceRows.filter((row) => row.crop_key === selection.cropKey);
+    const selectedRow = [exactMatchRows, cropMatchRows, provinceRows]
+      .map((candidateRows) =>
+        candidateRows.reduce<MartAgroProvinceCampaignRow | null>((currentBestRow, row) => {
+          if (!currentBestRow || compareCampaignRecency(row, currentBestRow) > 0) {
+            return row;
+          }
+
+          return currentBestRow;
+        }, null),
+      )
+      .find((row): row is MartAgroProvinceCampaignRow => row !== null);
+
+    if (selectedRow) {
+      selectedRowsByProvince.set(provinceJoinKey, selectedRow);
+    }
+  }
+
+  return selectedRowsByProvince;
+}
+
 function buildTaxByProvinceMap(taxRows: TaxProvinceRow[]) {
   const rowsByProvince = new Map<string, TaxProvinceRow>();
 
@@ -475,6 +629,58 @@ function buildTaxByProvinceMap(taxRows: TaxProvinceRow[]) {
   }
 
   return rowsByProvince;
+}
+
+function buildLocationCountsByProvince(dimLocations: DimLocationRow[]) {
+  const countsByProvince = new Map<string, { count: number; province: string }>();
+
+  for (const row of dimLocations) {
+    const provinceJoinKey = getProvinceJoinKey(row.province_key, row.province_name);
+    const currentValue = countsByProvince.get(provinceJoinKey) ?? {
+      count: 0,
+      province: row.province_name,
+    };
+
+    currentValue.count += 1;
+    countsByProvince.set(provinceJoinKey, currentValue);
+  }
+
+  return countsByProvince;
+}
+
+async function getLocationDetailSupportContext() {
+  const { generatedAt, resolvedExports, snapshotExport } = await getDataSourcesContext();
+
+  if (!snapshotExport) {
+    throw new AgroDataError(
+      "Missing compact dashboard snapshot export. Expected marts.app_location_snapshot or marts.latest_weather_by_location.",
+    );
+  }
+
+  const cacheKey = `${generatedAt}:location-detail-support:${snapshotExport.canonicalKey}`;
+
+  if (cachedLocationDetailSupportContext?.cacheKey === cacheKey) {
+    return cachedLocationDetailSupportContext;
+  }
+
+  const [snapshotRows, martRows, taxRows, yieldRows] = await Promise.all([
+    loadLocationSnapshots(snapshotExport),
+    loadMartAgroProvinceCampaign(resolvedExports.mart_agro_province_campaign),
+    loadTaxProvince(resolvedExports.fct_tax_province),
+    loadYieldProvinceCampaign(resolvedExports.fct_yield_province_campaign),
+  ]);
+
+  const selection = selectDefaultCampaign(martRows);
+  cachedLocationDetailSupportContext = {
+    cacheKey,
+    selection,
+    snapshotByLocationId: buildSnapshotByLocationId(snapshotRows),
+    taxByProvince: buildTaxByProvinceMap(taxRows),
+    yieldByProvince: buildYieldByProvinceMap(yieldRows, selection),
+    martByProvince: buildMartByProvinceMap(martRows, selection),
+  };
+
+  return cachedLocationDetailSupportContext;
 }
 
 function buildClimateScoreContext(snapshotRows: LocationSnapshotRow[]): ClimateScoreContext {
@@ -503,6 +709,75 @@ function buildProvinceScoreContext(
     taxSpreadRisk: createRiskNormalizer(taxRows.map((row) => row.rural_property_tax_usd_ha_spread)),
     taxUsdHaRisk: createRiskNormalizer(taxRows.map((row) => row.rural_property_tax_usd_ha_avg)),
     yieldRisk: createRiskNormalizer(yieldRows.map((row) => row.yield_kg_ha), { invert: true }),
+  };
+}
+
+function buildProvinceStatsFromMart(
+  martByProvince: Map<string, MartAgroProvinceCampaignRow>,
+  locationCountsByProvince: Map<string, { count: number; province: string }>,
+) {
+  const martRows = Array.from(martByProvince.values());
+  const yieldRisk = createRiskNormalizer(martRows.map((row) => row.yield_kg_ha), { invert: true });
+  const harvestedShareRisk = createRiskNormalizer(martRows.map((row) => row.harvested_share_pct), { invert: true });
+  const departmentCoverageRisk = createRiskNormalizer(martRows.map((row) => row.department_count), { invert: true });
+  const productionTonnesRisk = createRiskNormalizer(martRows.map((row) => row.production_tonnes), { invert: true });
+  const taxUsdHaRisk = createRiskNormalizer(martRows.map((row) => row.rural_property_tax_usd_ha_avg));
+  const grossTurnoverRisk = createRiskNormalizer(martRows.map((row) => row.gross_turnover_tax_pct));
+  const taxSpreadRisk = createRiskNormalizer(martRows.map((row) => row.rural_property_tax_usd_ha_spread));
+
+  const provinceKeys = new Set<string>([
+    ...locationCountsByProvince.keys(),
+    ...martByProvince.keys(),
+  ]);
+
+  return Array.from(provinceKeys)
+    .map((provinceJoinKey) => {
+      const martRow = martByProvince.get(provinceJoinKey) ?? null;
+      const countsEntry = locationCountsByProvince.get(provinceJoinKey) ?? {
+        count: 0,
+        province: martRow?.province_name ?? provinceJoinKey,
+      };
+
+      const weightedRisk = martRow
+        ? weightedAverage([
+            { value: yieldRisk(martRow.yield_kg_ha), weight: 0.28 },
+            { value: harvestedShareRisk(martRow.harvested_share_pct), weight: 0.14 },
+            { value: departmentCoverageRisk(martRow.department_count), weight: 0.1 },
+            { value: productionTonnesRisk(martRow.production_tonnes), weight: 0.08 },
+            { value: taxUsdHaRisk(martRow.rural_property_tax_usd_ha_avg), weight: 0.18 },
+            { value: grossTurnoverRisk(martRow.gross_turnover_tax_pct), weight: 0.12 },
+            { value: taxSpreadRisk(martRow.rural_property_tax_usd_ha_spread), weight: 0.1 },
+          ])
+        : NEUTRAL_SCORE;
+
+      const completenessPenalty = martRow
+        ? (martRow.has_weather_campaign_data ? 0 : 8) + (martRow.has_tax_data ? 0 : 6)
+        : 0;
+
+      return {
+        province: countsEntry.province,
+        averageRisk: roundScore(weightedRisk + completenessPenalty),
+        count: countsEntry.count,
+      };
+    })
+    .sort((left, right) => left.province.localeCompare(right.province));
+}
+
+function buildLocationDetailProvinceContext(
+  martRow: MartAgroProvinceCampaignRow | null,
+  taxRow: TaxProvinceRow | null,
+  yieldRow: YieldProvinceCampaignRow | null,
+): LocationDetailProvinceContext {
+  return {
+    yieldKgHa: yieldRow?.yield_kg_ha ?? martRow?.yield_kg_ha ?? null,
+    harvestedSharePct: yieldRow?.harvested_share_pct ?? martRow?.harvested_share_pct ?? null,
+    departmentCount: yieldRow?.department_count ?? martRow?.department_count ?? null,
+    productionTonnes: yieldRow?.production_tonnes ?? martRow?.production_tonnes ?? null,
+    ruralPropertyTaxUsdHaAvg: taxRow?.rural_property_tax_usd_ha_avg ?? martRow?.rural_property_tax_usd_ha_avg ?? null,
+    ruralPropertyTaxUsdHaSpread: taxRow?.rural_property_tax_usd_ha_spread ?? martRow?.rural_property_tax_usd_ha_spread ?? null,
+    grossTurnoverTaxPct: taxRow?.gross_turnover_tax_pct ?? martRow?.gross_turnover_tax_pct ?? null,
+    hasWeatherCampaignData: martRow?.has_weather_campaign_data ?? null,
+    hasTaxData: martRow?.has_tax_data ?? null,
   };
 }
 
@@ -731,6 +1006,73 @@ async function buildGcsDashboardPayload(): Promise<DashboardPayload> {
   return payload;
 }
 
+async function buildGcsProvinceAnalyticsPayload(): Promise<ProvinceAnalyticsPayload> {
+  const { generatedAt, resolvedExports } = await getDataSourcesContext();
+  const cacheKey = `${generatedAt}:province-analytics`;
+
+  if (cachedProvinceAnalyticsPayloadContext?.cacheKey === cacheKey) {
+    return cachedProvinceAnalyticsPayloadContext.payload;
+  }
+
+  const [dimLocations, martRows] = await Promise.all([
+    loadDimLocations(resolvedExports.dim_location),
+    loadMartAgroProvinceCampaign(resolvedExports.mart_agro_province_campaign),
+  ]);
+
+  const uniqueDimLocations = Array.from(new Map(dimLocations.map((row) => [row.location_id, row])).values());
+  const selection = selectDefaultCampaign(martRows);
+  const martByProvince = buildMartByProvinceMap(martRows, selection);
+  const locationCountsByProvince = buildLocationCountsByProvince(uniqueDimLocations);
+
+  const payload: ProvinceAnalyticsPayload = {
+    source: "gcs",
+    manifestGeneratedAt: generatedAt,
+    provinceStats: buildProvinceStatsFromMart(martByProvince, locationCountsByProvince),
+    meta: {
+      cropKey: selection.cropKey,
+      campaignName: selection.campaignName,
+      selectionReason: selection.selectionReason,
+    },
+  };
+
+  cachedProvinceAnalyticsPayloadContext = {
+    cacheKey,
+    payload,
+  };
+
+  return payload;
+}
+
+async function buildGcsLocationDetailPayload(locationId: string): Promise<LocationDetailPayload> {
+  const dashboardPayload = await buildGcsDashboardPayload();
+  const locationSummary = dashboardPayload.riskData.find((location) => location.location_id === locationId) ?? null;
+
+  if (!locationSummary) {
+    throw new AgroNotFoundError(`Location \"${locationId}\" was not found in the dashboard dataset.`);
+  }
+
+  const { generatedAt } = await getDataSourcesContext();
+  const supportContext = await getLocationDetailSupportContext();
+  const snapshotRow = supportContext.snapshotByLocationId.get(locationId) ?? null;
+  const provinceJoinKey = getProvinceJoinKey(snapshotRow?.province_key, locationSummary.province_name);
+  const yieldRow = supportContext.yieldByProvince.get(provinceJoinKey) ?? null;
+  const taxRow = supportContext.taxByProvince.get(provinceJoinKey) ?? null;
+  const martRow = supportContext.martByProvince.get(provinceJoinKey) ?? null;
+
+  return {
+    source: "gcs",
+    manifestGeneratedAt: generatedAt,
+    detail: {
+      summary: locationSummary,
+      snapshotDate: snapshotRow?.snapshot_date ?? snapshotRow?.date ?? null,
+      cropKey: supportContext.selection.cropKey,
+      campaignName: supportContext.selection.campaignName,
+      selectionReason: supportContext.selection.selectionReason,
+      provinceContext: buildLocationDetailProvinceContext(martRow, taxRow, yieldRow),
+    },
+  };
+}
+
 export async function getDashboardPayload(): Promise<DashboardPayload> {
   const env = getAgroEnv();
 
@@ -753,5 +1095,57 @@ export async function getDashboardPayload(): Promise<DashboardPayload> {
     }
 
     throw new AgroDataError("Failed to build dashboard payload from AgroProtect exports.", { cause: error });
+  }
+}
+
+export async function getProvinceAnalyticsPayload(): Promise<ProvinceAnalyticsPayload> {
+  const env = getAgroEnv();
+
+  if (env.AGRO_DATA_SOURCE === "mock") {
+    return buildMockProvinceAnalyticsPayload();
+  }
+
+  try {
+    return await buildGcsProvinceAnalyticsPayload();
+  } catch (error) {
+    if (env.AGRO_FALLBACK_TO_MOCK) {
+      return buildMockProvinceAnalyticsPayload({
+        selectionReason: "fallback_to_mock",
+      });
+    }
+
+    if (error instanceof AgroDataError) {
+      throw error;
+    }
+
+    throw new AgroDataError("Failed to build province analytics payload from AgroProtect exports.", {
+      cause: error,
+    });
+  }
+}
+
+export async function getLocationDetailPayload(locationId: string): Promise<LocationDetailPayload> {
+  const env = getAgroEnv();
+
+  if (env.AGRO_DATA_SOURCE === "mock") {
+    return buildMockLocationDetailPayload(locationId);
+  }
+
+  try {
+    return await buildGcsLocationDetailPayload(locationId);
+  } catch (error) {
+    if (env.AGRO_FALLBACK_TO_MOCK) {
+      return buildMockLocationDetailPayload(locationId, {
+        selectionReason: "fallback_to_mock",
+      });
+    }
+
+    if (error instanceof AgroDataError || error instanceof AgroNotFoundError) {
+      throw error;
+    }
+
+    throw new AgroDataError(`Failed to build location detail payload for \"${locationId}\".`, {
+      cause: error,
+    });
   }
 }
