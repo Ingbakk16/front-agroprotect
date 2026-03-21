@@ -1,16 +1,9 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run build",
   "devCommand": "npm run dev",
   "installCommand": "npm ci",
   "framework": "nextjs",
-  "nodeVersion": "20.x",
-  "env": [
-    "AI_PROVIDER",
-    "AI_MODEL",
-    "GROQ_API_KEY",
-    "GOOGLE_GENERATIVE_AI_API_KEY",
-    "GCP_PROJECT_ID"
-  ],
   "regions": ["iad1"],
   "functions": {
     "app/api/**": {
