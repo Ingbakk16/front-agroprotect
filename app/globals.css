@@ -126,6 +126,16 @@
   .font-display {
     font-family: var(--font-display), ui-serif, Georgia, 'Times New Roman', serif;
   }
+
+  /**
+   * “Agro”: relieve sin background-clip (evita g/y/p cortados en WebKit).
+   */
+  .brand-wordmark-agro {
+    color: var(--foreground);
+    text-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.18),
+      0 0 26px rgba(57, 255, 20, 0.07);
+  }
 }
 
 /* AgroProtect custom styles */
@@ -137,6 +147,29 @@
 
 .tabular {
   font-variant-numeric: tabular-nums;
+}
+
+/** Scrollbar oscuro para paneles (evita riel blanco del SO sobre UI dark). */
+.panel-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--surface-container-highest) transparent;
+}
+
+.panel-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.panel-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.panel-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--surface-container-highest);
+  border-radius: 9999px;
+}
+
+.panel-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
 }
 
 /* Leaflet overrides */
