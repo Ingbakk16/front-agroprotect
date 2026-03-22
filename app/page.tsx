@@ -28,27 +28,17 @@ const ArgentinaMap = dynamic(
   { 
     ssr: false,
     loading: () => (
-      <div className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-2xl border border-border bg-surface-container-lowest shadow-inner">
-        <div className="absolute inset-0 bg-surface-container/20 motion-safe:animate-pulse motion-safe:[animation-duration:2s]" />
-        <span className="relative text-sm text-muted-foreground/80">Loading map…</span>
+      <div className="w-full h-full rounded-2xl bg-surface-container-lowest overflow-hidden border border-border relative shadow-inner flex items-center justify-center">
+        <div className="text-muted-foreground text-sm">Loading map...</div>
       </div>
-    ),
+    )
   }
 );
 
 // Dynamic import for AI Chat with Gemini
 const AIChatPanel = dynamic(
   () => import("@/components/dashboard/ai-chat-panel").then((mod) => mod.AIChatPanel),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex h-full flex-col gap-3 p-4 motion-reduce:animate-none">
-        <div className="h-16 shrink-0 rounded-xl bg-surface-container-high/40 motion-safe:animate-pulse" />
-        <div className="min-h-0 flex-1 rounded-xl bg-surface-container-high/25 motion-safe:animate-pulse motion-safe:[animation-duration:1.4s]" />
-        <div className="h-11 shrink-0 rounded-lg bg-surface-container-high/35 motion-safe:animate-pulse" />
-      </div>
-    ),
-  }
+  { ssr: false }
 );
 
 const AnalyticsModal = dynamic(
@@ -298,15 +288,6 @@ export default function LandingPage() {
     };
   }, [selectedLocationId]);
 
-  useEffect(() => {
-    if (!isChatOpen) return;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previous;
-    };
-  }, [isChatOpen]);
-
   const handleLocationSelect = useCallback((location: RiskData) => {
     setSelectedLocationId(location.location_id);
     setSelectedLocation(location);
@@ -527,11 +508,7 @@ export default function LandingPage() {
       </section>
 
       {/* Dashboard Section */}
-      <section
-        id="dashboard"
-        ref={dashboardRef}
-        className="bg-background py-16 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-4 motion-safe:duration-700 motion-safe:fill-mode-both"
-      >
+      <section id="dashboard" ref={dashboardRef} className="py-16 bg-background">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
             <h2 className="text-3xl sm:text-4xl font-black mb-4">
@@ -982,19 +959,8 @@ export default function LandingPage() {
 
       {/* AI Chat Modal - Powered by Gemini + MCP */}
       {isChatOpen && (
-        <div
-          role="presentation"
-          className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-500"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setIsChatOpen(false);
-          }}
-        >
-          <div
-            role="dialog"
-            aria-labelledby="agro-chat-title"
-            aria-modal="true"
-            className="flex h-[600px] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-border bg-surface-container shadow-2xl motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-500 motion-safe:ease-out"
-          >
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-surface-container border border-border w-full max-w-lg h-[600px] rounded-2xl overflow-hidden flex flex-col shadow-2xl">
             {/* Modal Header */}
             <div className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background/80 px-4 backdrop-blur-xl sm:px-6">
               <div className="flex items-center gap-3">
@@ -1002,10 +968,7 @@ export default function LandingPage() {
                   <Bot className="h-5 w-5 text-primary" aria-hidden />
                 </div>
                 <div>
-                  <h3
-                    id="agro-chat-title"
-                    className="text-foreground leading-tight"
-                  >
+                  <h3 className="text-foreground leading-tight">
                     <span className="font-bold">AgroProtect</span>
                     <span className="font-display font-normal italic text-primary"> AI</span>
                   </h3>

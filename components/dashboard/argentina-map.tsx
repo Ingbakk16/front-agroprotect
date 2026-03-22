@@ -126,13 +126,7 @@ export function ArgentinaMap({ data, onLocationSelect, selectedIndex, onIndexCha
       const map = L.map(container, {
         zoomControl: false,
         attributionControl: false,
-        // Canvas + opacity/transform en el contenedor suele dejar tiles borrosos o en blanco
-        preferCanvas: false,
-        wheelPxPerZoomLevel: 120,
-        wheelDebounceTime: 55,
-        bounceAtZoomLimits: false,
-        easeLinearity: 0.18,
-        inertia: true,
+        preferCanvas: true,
       }).setView([-38, -63], 5);
 
       L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
@@ -152,23 +146,19 @@ export function ArgentinaMap({ data, onLocationSelect, selectedIndex, onIndexCha
           if (size.x >= 300 && size.y >= 300) {
             setCanAddHeat(true);
             setIsLoading(false);
-            requestAnimationFrame(() => {
-              map.invalidateSize({ animate: false });
-              requestAnimationFrame(() => map.invalidateSize({ animate: false }));
-            });
           } else {
             // Retry
             setTimeout(() => {
-              map.invalidateSize({ animate: false });
+              map.invalidateSize();
               setCanAddHeat(true);
               setIsLoading(false);
-              requestAnimationFrame(() => map.invalidateSize({ animate: false }));
-            }, 400);
+            }, 500);
           }
-        }, 640);
+        }, 800);
       });
     };
 
+    // Start initialization after a delay
     initTimeout = setTimeout(tryInit, 200);
 
     return () => {
@@ -515,13 +505,9 @@ export function ArgentinaMap({ data, onLocationSelect, selectedIndex, onIndexCha
   return (
     <div className="isolate z-0 w-full h-full relative rounded-2xl overflow-hidden border border-border bg-surface-container-lowest">
       {isLoading && (
-        <div
-          aria-busy="true"
-          aria-live="polite"
-          className="absolute inset-0 z-[1001] flex items-center justify-center bg-surface-container"
-        >
+        <div className="absolute inset-0 z-[1001] bg-surface-container flex items-center justify-center">
           <div className="flex flex-col items-center gap-3">
-            <Loader2 className="h-8 w-8 text-primary animate-spin motion-reduce:animate-none" />
+            <Loader2 className="w-8 h-8 text-primary animate-spin" />
             <span className="text-sm text-muted-foreground">Scanning zones...</span>
           </div>
         </div>
