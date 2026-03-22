@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { Send, Bot, User, Sparkles, Loader2 } from "lucide-react";
+import { AssistantMessageContent } from "@/components/assistant-message-content";
 import { RiskData } from "@/lib/types";
 
 interface AIChatPanelProps {
@@ -43,9 +44,9 @@ export function AIChatPanel({ selectedLocation, selectedLocationId, embedded = f
   };
 
   const suggestedQuestions = [
-    "What is the current risk status?",
+    "¿Cuál es el riesgo actual en esta zona?",
     "What preventive measures do you recommend?",
-    "How does water stress affect crops?",
+    "Haz un breve informe con los índices del contexto",
   ];
 
   // For embedded mode, render without fixed positioning
@@ -53,7 +54,7 @@ export function AIChatPanel({ selectedLocation, selectedLocationId, embedded = f
     return (
       <div className="h-full flex flex-col">
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 panel-scrollbar">
           {messages.length === 0 ? (
             <div className="space-y-4">
               <div className="text-center py-4">
@@ -99,15 +100,17 @@ export function AIChatPanel({ selectedLocation, selectedLocationId, embedded = f
                   </div>
                 )}
                 <div
-                  className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${
+                  className={`max-w-[85%] rounded-xl px-3 py-2.5 text-sm ${
                     message.role === "user"
                       ? "bg-primary text-primary-foreground"
-                      : "bg-surface-container-high text-foreground"
+                      : "bg-surface-container-high text-foreground border border-border/50"
                   }`}
                 >
                   {message.parts.map((part, index) => {
                     if (part.type === "text") {
-                      return (
+                      return message.role === "assistant" ? (
+                        <AssistantMessageContent key={index} text={part.text} />
+                      ) : (
                         <span key={index} className="whitespace-pre-wrap">
                           {part.text}
                         </span>
@@ -179,7 +182,7 @@ export function AIChatPanel({ selectedLocation, selectedLocationId, embedded = f
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 panel-scrollbar">
         {messages.length === 0 ? (
           <div className="space-y-4">
             <div className="text-center py-6">
@@ -227,15 +230,17 @@ export function AIChatPanel({ selectedLocation, selectedLocationId, embedded = f
                 </div>
               )}
               <div
-                className={`max-w-[85%] rounded-xl px-3 py-2 text-sm ${
+                className={`max-w-[85%] rounded-xl px-3 py-2.5 text-sm ${
                   message.role === "user"
                     ? "bg-primary text-primary-foreground"
-                    : "bg-surface-container-high text-foreground"
+                    : "bg-surface-container-high text-foreground border border-border/50"
                 }`}
               >
                 {message.parts.map((part, index) => {
                   if (part.type === "text") {
-                    return (
+                    return message.role === "assistant" ? (
+                      <AssistantMessageContent key={index} text={part.text} />
+                    ) : (
                       <span key={index} className="whitespace-pre-wrap">
                         {part.text}
                       </span>

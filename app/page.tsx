@@ -313,7 +313,7 @@ export default function LandingPage() {
                 e.preventDefault();
                 window.scrollTo({ top: 0, behavior: "smooth" });
               }}
-              className="rounded-lg outline-none ring-offset-background transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring"
+              className="rounded-lg outline-none ring-offset-background transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring overflow-visible"
             >
               <BrandWordmark variant="nav" />
             </a>
@@ -612,24 +612,29 @@ export default function LandingPage() {
 
             {/* Detail Panel */}
             <div className="h-[500px] lg:h-[600px] rounded-2xl border border-border bg-surface-container overflow-hidden flex flex-col">
-              {/* Header */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-                <div className="flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-primary" />
-                  <span className="font-semibold">Zone Details</span>
+              {/* Header — mismo lenguaje que el nav fijo (vidrio + borde). */}
+              <div className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background/80 px-4 backdrop-blur-xl sm:px-6">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 border border-border/60">
+                    <MapPin className="h-4 w-4 text-primary" aria-hidden />
+                  </div>
+                  <span className="text-sm font-semibold tracking-tight text-foreground">
+                    Zone Details
+                  </span>
                 </div>
                 <Button
                   size="sm"
+                  variant="outline"
                   onClick={() => setIsChatOpen(true)}
-                  className="bg-primary/10 text-primary hover:bg-primary/20 border-0"
+                  className="border-border bg-surface-container-high/40 text-foreground hover:bg-primary/10 hover:text-primary hover:border-primary/30"
                 >
-                  <Bot className="w-4 h-4 mr-2" />
+                  <Bot className="w-4 h-4 mr-2 text-primary" />
                   AI Assistant
                 </Button>
               </div>
 
               {/* Content */}
-              <div className="flex-1 p-6 overflow-y-auto">
+              <div className="flex-1 p-6 overflow-y-auto panel-scrollbar">
                 {selectedLocation ? (
                   <div className="space-y-5">
                     <div>
@@ -957,10 +962,10 @@ export default function LandingPage() {
         <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-surface-container border border-border w-full max-w-lg h-[600px] rounded-2xl overflow-hidden flex flex-col shadow-2xl">
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-surface-container-low">
+            <div className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background/80 px-4 backdrop-blur-xl sm:px-6">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                  <Bot className="w-5 h-5 text-primary" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-border/60 bg-primary/10">
+                  <Bot className="h-5 w-5 text-primary" aria-hidden />
                 </div>
                 <div>
                   <h3 className="text-foreground leading-tight">
